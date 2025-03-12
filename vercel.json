@@ -1,0 +1,16 @@
+{
+    "version": 2,
+    "functions": {
+      "api/chat.js": {
+        "memory": 1024,
+        "maxDuration": 10
+      }
+    },
+    "routes": [
+      { "handle": "filesystem" },
+      { "src": "/api/(.*)", "dest": "/api/$1" }
+    ],
+    "env": {
+      "GEMINI_API_KEY": "@gemini_api_key"
+    }
+  }
