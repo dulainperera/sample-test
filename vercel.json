@@ -9,8 +9,6 @@
     "routes": [
       { "handle": "filesystem" },
       { "src": "/api/(.*)", "dest": "/api/$1" }
-    ],
-    "env": {
-      "GEMINI_API_KEY": "@gemini_api_key"
-    }
+    ]
+    
   }
