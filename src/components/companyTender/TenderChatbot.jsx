@@ -75,7 +75,7 @@ const TenderChatbot = ({ userType = 'company' }) => {
       const source = axios.CancelToken.source();
       const timeout = setTimeout(() => {
         source.cancel('Request timed out');
-      }, 25000);
+      }, 45000); // Increased from 25000
 
       // Call our secure edge function
       const response = await axios.post('/api/chat', {
@@ -86,7 +86,7 @@ const TenderChatbot = ({ userType = 'company' }) => {
         userType
       }, {
         cancelToken: source.token,
-        timeout: 25000
+        timeout: 45000 // Increased from 25000
       });
 
       // Clear the timeout
