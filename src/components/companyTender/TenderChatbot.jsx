@@ -71,22 +71,25 @@ const TenderChatbot = ({ userType = 'company' }) => {
     setLastError(null);
 
     try {
-      // Create a timeout for the request
+      // Only send the last 5 messages to reduce payload size
+      const recentMessages = [...messages].slice(-4).concat(userMessage);
+      
+      // Create a timeout for the request - increased to 60 seconds
       const source = axios.CancelToken.source();
       const timeout = setTimeout(() => {
         source.cancel('Request timed out');
-      }, 45000); // Increased from 25000
+      }, 60000);
 
       // Call our secure edge function
       const response = await axios.post('/api/chat', {
-        messages: messages.concat(userMessage).map(msg => ({ 
+        messages: recentMessages.map(msg => ({ 
           role: msg.role, 
           content: msg.content 
         })),
         userType
       }, {
         cancelToken: source.token,
-        timeout: 45000 // Increased from 25000
+        timeout: 60000
       });
 
       // Clear the timeout
@@ -121,9 +124,9 @@ const TenderChatbot = ({ userType = 'company' }) => {
       } else if (error.request) {
         console.error('No response received:', error.request);
         errorMessage = "No response received from the server. Please check your internet connection.";
-      } else if (error.message.includes('timeout')) {
+      } else if (error.message && error.message.includes('timeout')) {
         console.error('Request timed out');
-        errorMessage = "Your request timed out. The server might be experiencing high traffic.";
+        errorMessage = "Your request timed out. The server might be experiencing high traffic. Try asking a shorter question.";
       }
       
       // Add error message with retry option

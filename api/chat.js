@@ -1,30 +1,41 @@
 // Vercel Edge Function for Gemini API
 export default async function handler(req) {
+  console.log('Handler started');
   if (req.method !== 'POST') {
     return methodNotAllowedResponse();
   }
 
   try {
+    console.log('Checking API key');
     if (!process.env.GEMINI_API_KEY) {
       console.error('Missing GEMINI_API_KEY environment variable');
       return configurationErrorResponse();
     }
 
+    console.log('Parsing request body');
     const { messages, userType } = await req.json();
 
+    console.log('Validating request');
     if (!isValidRequest(messages)) {
       return invalidRequestResponse();
     }
 
+    console.log('Creating system prompt');
     const systemPrompt = createSystemPrompt(userType);
+    
+    console.log('Formatting conversation history');
     const limitedHistory = formatConversationHistory(messages);
+    
+    console.log('Creating API URL');
     const apiUrl = createApiUrl();
 
     console.log('Calling Gemini API...');
     const response = await callGeminiApi(apiUrl, systemPrompt, limitedHistory);
 
+    console.log('Processing API response');
     return await handleApiResponse(response);
   } catch (error) {
+    console.log('Handler caught error:', error.message);
     return handleError(error);
   }
 }
@@ -76,7 +87,8 @@ function formatConversationHistory(messages) {
     role: msg.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: msg.content }]
   }));
-  return conversationHistory.slice(-10);
+  // Reduce to just 5 messages to reduce payload size
+  return conversationHistory.slice(-5);
 }
 
 function createApiUrl() {
@@ -84,11 +96,11 @@ function createApiUrl() {
 }
 
 async function callGeminiApi(apiUrl, systemPrompt, limitedHistory) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 40000); // Increased from 25000
-
+  console.log('Starting Gemini API call');
+  
   try {
-    const response = await fetch(apiUrl, {
+    // Set a timeout using Promise.race instead of AbortController
+    const fetchPromise = fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -100,7 +112,7 @@ async function callGeminiApi(apiUrl, systemPrompt, limitedHistory) {
         ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 800,
+          maxOutputTokens: 600, // Reduced from 800 to get faster responses
           topP: 0.95,
           topK: 40
         },
@@ -110,14 +122,24 @@ async function callGeminiApi(apiUrl, systemPrompt, limitedHistory) {
           { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
           { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
         ]
-      }),
-      signal: controller.signal
+      })
     });
-
-    clearTimeout(timeoutId);
+    
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Request timeout after 50 seconds'));
+      }, 50000);
+    });
+    
+    // Race the fetch against the timeout
+    console.log('Waiting for API response...');
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    console.log('API response received');
+    
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
+    console.error('Error in Gemini API call:', error.message);
     throw error;
   }
 }
@@ -170,7 +192,7 @@ async function handleApiResponse(response) {
 }
 
 function handleError(error) {
-  if (error.name === 'AbortError') {
+  if (error.message && error.message.includes('timeout')) {
     console.error('Request timed out:', error);
     return new Response(JSON.stringify({ 
       error: 'Request timed out', 
