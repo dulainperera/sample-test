@@ -1,14 +1,23 @@
 {
-    "version": 2,
-    "functions": {
-      "api/chat.js": {
-        "memory": 1024,
-        "maxDuration": 40
-      }
+  "version": 2,
+  "functions": {
+    "api/chat.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "handle": "filesystem"
     },
-    "routes": [
-      { "handle": "filesystem" },
-      { "src": "/api/(.*)", "dest": "/api/$1" }
-    ]
-    
-  }
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+ 
+}

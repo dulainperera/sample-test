@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, Send, X, Minimize2, Maximize2, Bot, Loader } from 'lucide-react';
+import { MessageCircle, Send, X, Minimize2, Maximize2, Bot, Loader, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import PropTypes from 'prop-types';
 
@@ -9,6 +9,7 @@ const TenderChatbot = ({ userType = 'company' }) => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [lastError, setLastError] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Initial greeting based on user type
@@ -29,26 +30,53 @@ const TenderChatbot = ({ userType = 'company' }) => {
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isMinimized) {
       scrollToBottom();
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isMinimized]);
 
-  const handleSend = async () => {
-    if (!inputValue.trim()) return;
+  // Function to retry the last failed message
+  const retryLastMessage = () => {
+    if (!lastError) return;
+    
+    // Find the last user message
+    const lastUserMessageIndex = [...messages].reverse().findIndex(msg => msg.role === 'user');
+    if (lastUserMessageIndex === -1) return;
+    
+    const lastUserMessage = messages[messages.length - 1 - lastUserMessageIndex];
+    
+    // Remove the error message
+    setMessages(prevMessages => prevMessages.filter(msg => !msg.isError));
+    
+    // Process the message again
+    handleSendMessage(lastUserMessage.content);
+    
+    // Clear the error state
+    setLastError(null);
+  };
+
+  const handleSendMessage = async (content) => {
+    if (!content.trim()) return;
 
     // Add user message
     const userMessage = { 
       role: 'user', 
-      content: inputValue, 
+      content: content, 
       timestamp: new Date() 
     };
     
     setMessages(prevMessages => [...prevMessages, userMessage]);
     setInputValue('');
     setIsTyping(true);
+    setLastError(null);
 
     try {
+      // Create a timeout for the request
+      const source = axios.CancelToken.source();
+      const timeout = setTimeout(() => {
+        source.cancel('Request timed out');
+      }, 25000);
+
       // Call our secure edge function
       const response = await axios.post('/api/chat', {
         messages: messages.concat(userMessage).map(msg => ({ 
@@ -56,7 +84,13 @@ const TenderChatbot = ({ userType = 'company' }) => {
           content: msg.content 
         })),
         userType
+      }, {
+        cancelToken: source.token,
+        timeout: 25000
       });
+
+      // Clear the timeout
+      clearTimeout(timeout);
 
       const assistantMessage = {
         role: 'assistant',
@@ -68,18 +102,47 @@ const TenderChatbot = ({ userType = 'company' }) => {
     } catch (error) {
       console.error('Error with chat request:', error);
       
-      // Add error message
+      // Store the error for potential retry
+      setLastError(error);
+      
+      // Create more detailed error message
+      let errorMessage = "I'm having trouble connecting right now. Please try again later.";
+      
+      if (error.response) {
+        console.error('Response error data:', error.response.data);
+        console.error('Response status:', error.response.status);
+        
+        // Custom error message based on status code
+        if (error.response.status === 504) {
+          errorMessage = "The server took too long to respond. This might be due to high traffic or complex queries.";
+        } else if (error.response.status === 500) {
+          errorMessage = "There was a server error processing your request. Our team has been notified.";
+        }
+      } else if (error.request) {
+        console.error('No response received:', error.request);
+        errorMessage = "No response received from the server. Please check your internet connection.";
+      } else if (error.message.includes('timeout')) {
+        console.error('Request timed out');
+        errorMessage = "Your request timed out. The server might be experiencing high traffic.";
+      }
+      
+      // Add error message with retry option
       setMessages(prevMessages => [
         ...prevMessages,
         {
           role: 'assistant',
-          content: "I'm having trouble connecting right now. Please try again later.",
-          timestamp: new Date()
+          content: errorMessage,
+          timestamp: new Date(),
+          isError: true
         }
       ]);
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleSend = () => {
+    handleSendMessage(inputValue);
   };
 
   const handleKeyPress = (e) => {
@@ -144,15 +207,30 @@ const TenderChatbot = ({ userType = 'company' }) => {
                 <div className={`max-w-[80%] rounded-lg p-3 ${
                   message.role === 'user' 
                     ? 'bg-yellow-500 text-white' 
-                    : 'bg-gray-100 text-gray-800'
+                    : message.isError 
+                      ? 'bg-red-100 text-red-800 border border-red-300' 
+                      : 'bg-gray-100 text-gray-800'
                 }`}>
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  <span className="text-xs opacity-75 mt-1 block">
-                    {message.timestamp.toLocaleTimeString([], { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </span>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-xs opacity-75">
+                      {message.timestamp.toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </span>
+                    
+                    {/* Retry button for error messages */}
+                    {message.isError && (
+                      <button 
+                        onClick={retryLastMessage}
+                        className="text-xs flex items-center gap-1 text-red-700 hover:text-red-900"
+                        aria-label="Retry message"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Retry
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
